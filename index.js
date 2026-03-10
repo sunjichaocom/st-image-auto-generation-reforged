@@ -5,7 +5,7 @@ import { regexFromString } from '../../../utils.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
 import { presetManager } from './presets.js'; // 引入预设管理器
 
-const extensionName = 'st-image-auto-generation';
+const extensionName = 'st-image-auto-generation-reforged';
 const extensionFolderPath = `/scripts/extensions/third-party/${extensionName}`;
 
 const INSERT_TYPE = { DISABLED: 'disabled', INLINE: 'inline', NEW_MESSAGE: 'new', REPLACE: 'replace' };
