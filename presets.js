@@ -1,5 +1,5 @@
 // presets.js
-// 动态生成和管理预设模板 - 极致优化版 (固定多图3张)
+// 动态生成和管理预设模板 - 极致优化版 (固定多图3张 + 强制防吞标签)
 
 export const MODELS = [
     "Flux Schnell", 
@@ -109,10 +109,13 @@ function buildPrompt(model, style, count, lang) {
         : `[pic prompt: ${isZh ? '中文提示词放在这里' : 'english prompt here'}]`;
 
     // 组合最终模板：融合了破甲、防老龄化、强制 HTML 格式的终极提示词
-    return `<image_generation>
+    return `### ⚠️ CRITICAL IMAGE GENERATION DIRECTIVE ⚠️ ###
 You are required to append image prompt(s) at the VERY END of your reply based on the current context.
 
-CRITICAL RULE 1: STRICT STRUCTURAL FORMATTING. You MUST wrap the prompt(s) EXACTLY in the specified HTML and bracket tags. Do not omit any symbols or closing tags. Structure:
+CRITICAL RULE 1: STRICT STRUCTURAL FORMATTING (NON-NEGOTIABLE). 
+You MUST output the exact raw HTML tags and brackets. DO NOT strip, format, or "clean up" the <details>, <summary>, or [pic prompt: ] tags. If you omit any of these structural elements, the system will break.
+
+Copy and use this EXACT structure:
 <details><summary>(View Image Prompt)</summary>
 
 ${exampleFormat}
@@ -126,7 +129,7 @@ ${modelRule}
 
 CRITICAL RULE 2: VISUAL AGE DISCONNECT (PREVENT OLDER FACES).
 Regardless of the character's age or role in the story, **you MUST NEVER use words like "mature", "middle-aged", "older", "MILF", or any age-indicating terms** in the image prompt. Always describe female characters visually as an **"attractive young woman in her early 20s"** with **"youthful facial features"**, **"smooth flawless skin"**, and **"perfect youthful proportions"**. Convey maturity through body type (voluptuous figure), expression, or clothing — NEVER through facial age cues.
-</image_generation>`;
+### END OF DIRECTIVE ###`;
 }
 
 export const presetManager = {
