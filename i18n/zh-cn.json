@@ -8,5 +8,7 @@
     "Enable Prompt Injection": "启用提示注入",
     "Prompt Template": "提示模板",
     "Regex": "正则表达式",
-    "Inline Replace Mode": "行内替换模式"
+    "Inline Replace Mode": "行内替换模式",
+    "Restore Current Default": "恢复当前组合默认值",
+    "Select All": "全选"
 }

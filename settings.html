@@ -19,14 +19,35 @@
                 <input type="checkbox" id="prompt_injection_enabled" class="checkbox">
             </label>
         </div>
+        
+        <hr>
+        <div class="flex-container" style="flex-wrap: wrap; gap: 5px; margin-bottom: 5px;">
+            <select id="preset_model_select" class="text_pole" style="flex: 1 1 45%; margin: 0;"></select>
+            <select id="preset_style_select" class="text_pole" style="flex: 1 1 45%; margin: 0;"></select>
+            <select id="preset_count_select" class="text_pole" style="flex: 1 1 45%; margin: 0;"></select>
+            <select id="preset_lang_select" class="text_pole" style="flex: 1 1 45%; margin: 0;"></select>
+        </div>
+        
+        <div class="flex-container flexnowrap margin-bottom-5">
+            <div id="btn_restore_template" class="menu_button flex1" data-i18n="Restore Current Default">Restore Current Default</div>
+        </div>
+        <hr>
+
         <div class="">
-            <div><label for="prompt_injection_text" class="flex1" data-i18n="Prompt Template">Prompt Template</label></div>
-            <textarea id="prompt_injection_text" class="text_pole textarea_compact" rows="3" placeholder="Prompt that instruct AI to generate image tag"></textarea>
+            <div class="flex-container flexnowrap" style="align-items: center; justify-content: space-between;">
+                <label for="prompt_injection_text" data-i18n="Prompt Template">Prompt Template</label>
+                <div id="btn_select_all_prompt" class="menu_button" style="padding: 2px 10px; font-size: 0.85em;" data-i18n="Select All">Select All</div>
+            </div>
+            <textarea id="prompt_injection_text" class="text_pole textarea_compact" rows="8" placeholder="Prompt that instruct AI to generate image tag"></textarea>
         </div>
         <div class="">
-            <div><label for="prompt_injection_regex" class="flex1" data-i18n="Regex">Regex</label></div>
+            <div class="flex-container flexnowrap" style="align-items: center; justify-content: space-between;">
+                <label for="prompt_injection_regex" data-i18n="Regex">Regex</label>
+                <div id="btn_select_all_regex" class="menu_button" style="padding: 2px 10px; font-size: 0.85em;" data-i18n="Select All">Select All</div>
+            </div>
             <textarea id="prompt_injection_regex" class="text_pole textarea_compact" rows="2" placeholder="Your regex here"></textarea>
         </div>
+
         <div class="flex-container flexnowrap">
             <label for="prompt_injection_position" class="flex1" data-i18n="Position">Position</label>
             <select id="prompt_injection_position" class="text_pole widthNatural margin0">
@@ -40,4 +61,4 @@
             <input id="prompt_injection_depth" class="text_pole widthUnset" type="number" min="0" max="100">
         </div>
     </div>
-</div> 
+</div>

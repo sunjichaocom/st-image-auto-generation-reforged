@@ -1,367 +1,222 @@
-// The main script for the extension
-// The following are examples of some basic extension functionality
-
-//You'll likely need to import extension_settings, getContext, and loadExtensionSettings from extensions.js
+// index.js
 import { extension_settings, getContext } from '../../../extensions.js';
-//You'll likely need to import some other functions from the main script
-import {
-    saveSettingsDebounced,
-    eventSource,
-    event_types,
-    updateMessageBlock,
-} from '../../../../script.js';
-import { appendMediaToMessage } from '../../../../script.js';
+import { saveSettingsDebounced, eventSource, event_types, updateMessageBlock, appendMediaToMessage } from '../../../../script.js';
 import { regexFromString } from '../../../utils.js';
 import { SlashCommandParser } from '../../../slash-commands/SlashCommandParser.js';
+import { presetManager } from './presets.js'; // 引入预设管理器
 
-// 扩展名称和路径
 const extensionName = 'st-image-auto-generation';
-// /scripts/extensions/third-party
 const extensionFolderPath = `/scripts/extensions/third-party/${extensionName}`;
 
-// 插入类型常量
-const INSERT_TYPE = {
-    DISABLED: 'disabled',
-    INLINE: 'inline',
-    NEW_MESSAGE: 'new',
-    REPLACE: 'replace',
-};
+const INSERT_TYPE = { DISABLED: 'disabled', INLINE: 'inline', NEW_MESSAGE: 'new', REPLACE: 'replace' };
 
-/**
- * Escapes characters for safe inclusion inside HTML attribute values.
- * @param {string} value
- * @returns {string}
- */
 function escapeHtmlAttribute(value) {
-    if (typeof value !== 'string') {
-        return '';
-    }
-
-    return value
-        .replace(/&/g, '&amp;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+    if (typeof value !== 'string') return '';
+    return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// 默认设置
 const defaultSettings = {
     insertType: INSERT_TYPE.DISABLED,
-    promptInjection: {
-        enabled: true,
-        prompt: `<image_generation>
-You must insert a <pic prompt="example prompt"> at end of the reply. Prompts are used for stable diffusion image generation, based on the plot and character to output appropriate prompts to generate captivating images.
-</image_generation>`,
-        regex: '/<pic[^>]*\\sprompt="([^"]*)"[^>]*?>/g',
-        position: 'deep_system', // deep_system, deep_user, deep_assistant
-        depth: 0, // 0表示添加到末尾，>0表示从末尾往前数第几个位置
-    },
+    promptInjection: { enabled: true, position: 'deep_system', depth: 0 },
+    customTemplates: {}, // 存储用户修改过的模板 { "Model_Style_Count_Lang": { prompt: "...", regex: "..." } }
+    selections: {
+        model: presetManager.MODELS[0],
+        style: presetManager.STYLES[0].id,
+        count: presetManager.COUNTS[0].id,
+        lang: presetManager.LANGS[0].id
+    }
 };
 
-// 从设置更新UI
-function updateUI() {
-    // 根据insertType设置开关状态
-    $('#auto_generation').toggleClass(
-        'selected',
-        extension_settings[extensionName].insertType !== INSERT_TYPE.DISABLED,
-    );
+// 获取当前组合的 Key
+function getCurrentKey() {
+    const s = extension_settings[extensionName].selections;
+    return presetManager.generateKey(s.model, s.style, s.count, s.lang);
+}
 
-    // 只在表单元素存在时更新它们
+// 获取当前组合的数据（优先读取用户自定义，否则读取系统默认）
+function getCurrentTemplateData() {
+    const key = getCurrentKey();
+    const custom = extension_settings[extensionName].customTemplates[key];
+    if (custom) return custom;
+    
+    const s = extension_settings[extensionName].selections;
+    return presetManager.getDefaultPreset(s.model, s.style, s.count, s.lang);
+}
+
+// 渲染下拉框选项
+function renderDropdowns() {
+    const populate = (selectId, dataArray, valueKey, textKey, selectedValue) => {
+        const select = $(`#${selectId}`);
+        select.empty();
+        dataArray.forEach(item => {
+            select.append($('<option>', {
+                value: typeof item === 'object' ? item[valueKey] : item,
+                text: typeof item === 'object' ? item[textKey] : item
+            }));
+        });
+        select.val(selectedValue);
+    };
+
+    const s = extension_settings[extensionName].selections;
+    populate('preset_model_select', presetManager.MODELS, null, null, s.model);
+    populate('preset_style_select', presetManager.STYLES, 'id', 'name', s.style);
+    populate('preset_count_select', presetManager.COUNTS, 'id', 'name', s.count);
+    populate('preset_lang_select', presetManager.LANGS, 'id', 'name', s.lang);
+}
+
+function updateUI() {
+    $('#auto_generation').toggleClass('selected', extension_settings[extensionName].insertType !== INSERT_TYPE.DISABLED);
+
     if ($('#image_generation_insert_type').length) {
-        $('#image_generation_insert_type').val(
-            extension_settings[extensionName].insertType,
-        );
-        $('#prompt_injection_enabled').prop(
-            'checked',
-            extension_settings[extensionName].promptInjection.enabled,
-        );
-        $('#prompt_injection_text').val(
-            extension_settings[extensionName].promptInjection.prompt,
-        );
-        $('#prompt_injection_regex').val(
-            extension_settings[extensionName].promptInjection.regex,
-        );
-        $('#prompt_injection_position').val(
-            extension_settings[extensionName].promptInjection.position,
-        );
-        $('#prompt_injection_depth').val(
-            extension_settings[extensionName].promptInjection.depth,
-        );
+        $('#image_generation_insert_type').val(extension_settings[extensionName].insertType);
+        $('#prompt_injection_enabled').prop('checked', extension_settings[extensionName].promptInjection.enabled);
+        $('#prompt_injection_position').val(extension_settings[extensionName].promptInjection.position);
+        $('#prompt_injection_depth').val(extension_settings[extensionName].promptInjection.depth);
+        
+        renderDropdowns();
+        
+        const currentData = getCurrentTemplateData();
+        $('#prompt_injection_text').val(currentData.prompt);
+        $('#prompt_injection_regex').val(currentData.regex);
     }
 }
 
-// 加载设置
 async function loadSettings() {
     extension_settings[extensionName] = extension_settings[extensionName] || {};
-
-    // 如果设置为空或缺少必要属性，使用默认设置
     if (Object.keys(extension_settings[extensionName]).length === 0) {
         Object.assign(extension_settings[extensionName], defaultSettings);
     } else {
-        // 确保promptInjection对象存在
-        if (!extension_settings[extensionName].promptInjection) {
-            extension_settings[extensionName].promptInjection =
-                defaultSettings.promptInjection;
-        } else {
-            // 确保promptInjection的所有子属性都存在
-            const defaultPromptInjection = defaultSettings.promptInjection;
-            for (const key in defaultPromptInjection) {
-                if (
-                    extension_settings[extensionName].promptInjection[key] ===
-                    undefined
-                ) {
-                    extension_settings[extensionName].promptInjection[key] =
-                        defaultPromptInjection[key];
-                }
-            }
-        }
-
-        // 确保insertType属性存在
-        if (extension_settings[extensionName].insertType === undefined) {
-            extension_settings[extensionName].insertType =
-                defaultSettings.insertType;
-        }
+        if (!extension_settings[extensionName].customTemplates) extension_settings[extensionName].customTemplates = {};
+        if (!extension_settings[extensionName].selections) extension_settings[extensionName].selections = defaultSettings.selections;
+        if (!extension_settings[extensionName].promptInjection) extension_settings[extensionName].promptInjection = defaultSettings.promptInjection;
+        if (extension_settings[extensionName].insertType === undefined) extension_settings[extensionName].insertType = defaultSettings.insertType;
     }
-
     updateUI();
 }
 
-// 创建设置页面
 async function createSettings(settingsHtml) {
-    // 创建一个容器来存放设置，确保其正确显示在扩展设置面板中
     if (!$('#image_auto_generation_container').length) {
-        $('#extensions_settings2').append(
-            '<div id="image_auto_generation_container" class="extension_container"></div>',
-        );
+        $('#extensions_settings2').append('<div id="image_auto_generation_container" class="extension_container"></div>');
     }
-
-    // 使用传入的settingsHtml而不是重新获取
     $('#image_auto_generation_container').empty().append(settingsHtml);
 
-    // 添加设置变更事件处理
+    // 基础设置变更
     $('#image_generation_insert_type').on('change', function () {
-        const newValue = $(this).val();
-        extension_settings[extensionName].insertType = newValue;
-        updateUI();
-        saveSettingsDebounced();
+        extension_settings[extensionName].insertType = $(this).val(); updateUI(); saveSettingsDebounced();
     });
-
-    // 添加提示词注入设置的事件处理
     $('#prompt_injection_enabled').on('change', function () {
-        extension_settings[extensionName].promptInjection.enabled =
-            $(this).prop('checked');
-        saveSettingsDebounced();
+        extension_settings[extensionName].promptInjection.enabled = $(this).prop('checked'); saveSettingsDebounced();
     });
-
-    $('#prompt_injection_text').on('input', function () {
-        extension_settings[extensionName].promptInjection.prompt =
-            $(this).val();
-        saveSettingsDebounced();
-    });
-
-    $('#prompt_injection_regex').on('input', function () {
-        extension_settings[extensionName].promptInjection.regex = $(this).val();
-        saveSettingsDebounced();
-    });
-
     $('#prompt_injection_position').on('change', function () {
-        extension_settings[extensionName].promptInjection.position =
-            $(this).val();
-        saveSettingsDebounced();
+        extension_settings[extensionName].promptInjection.position = $(this).val(); saveSettingsDebounced();
     });
-
-    // 深度设置事件处理
     $('#prompt_injection_depth').on('input', function () {
         const value = parseInt(String($(this).val()));
-        extension_settings[extensionName].promptInjection.depth = isNaN(value)
-            ? 0
-            : value;
-        saveSettingsDebounced();
+        extension_settings[extensionName].promptInjection.depth = isNaN(value) ? 0 : value; saveSettingsDebounced();
     });
 
-    // 初始化设置值
+    // 下拉框组合变更
+    const onSelectionChange = () => {
+        extension_settings[extensionName].selections = {
+            model: $('#preset_model_select').val(),
+            style: $('#preset_style_select').val(),
+            count: $('#preset_count_select').val(),
+            lang: $('#preset_lang_select').val()
+        };
+        updateUI();
+        saveSettingsDebounced();
+    };
+
+    $('#preset_model_select, #preset_style_select, #preset_count_select, #preset_lang_select').on('change', onSelectionChange);
+
+    // 用户编辑文本框，自动保存为当前组合的自定义配置
+    const onTextEdit = () => {
+        const key = getCurrentKey();
+        extension_settings[extensionName].customTemplates[key] = {
+            prompt: $('#prompt_injection_text').val(),
+            regex: $('#prompt_injection_regex').val()
+        };
+        saveSettingsDebounced();
+    };
+
+    $('#prompt_injection_text, #prompt_injection_regex').on('input', onTextEdit);
+
+    // 恢复当前组合的默认值
+    $('#btn_restore_template').on('click', function() {
+        if (confirm("确定要恢复当前组合的默认提示词吗？这会覆盖你的修改！")) {
+            const key = getCurrentKey();
+            delete extension_settings[extensionName].customTemplates[key];
+            updateUI();
+            saveSettingsDebounced();
+        }
+    });
+
+    // 全选按钮
+    $('#btn_select_all_prompt').on('click', () => $('#prompt_injection_text').select());
+    $('#btn_select_all_regex').on('click', () => $('#prompt_injection_regex').select());
+
     updateUI();
 }
 
-// 设置变更处理函数
 function onExtensionButtonClick() {
-    // 直接访问扩展设置面板
     const extensionsDrawer = $('#extensions-settings-button .drawer-toggle');
-
-    // 如果抽屉是关闭的，点击打开它
-    if ($('#rm_extensions_block').hasClass('closedDrawer')) {
-        extensionsDrawer.trigger('click');
-    }
-
-    // 等待抽屉打开后滚动到我们的设置容器
+    if ($('#rm_extensions_block').hasClass('closedDrawer')) extensionsDrawer.trigger('click');
     setTimeout(() => {
-        // 找到我们的设置容器
         const container = $('#image_auto_generation_container');
         if (container.length) {
-            // 滚动到设置面板位置
-            $('#rm_extensions_block').animate(
-                {
-                    scrollTop:
-                        container.offset().top -
-                        $('#rm_extensions_block').offset().top +
-                        $('#rm_extensions_block').scrollTop(),
-                },
-                500,
-            );
-
-            // 使用SillyTavern原生的抽屉展开方式
-            // 检查抽屉内容是否可见
-            const drawerContent = container.find('.inline-drawer-content');
+            $('#rm_extensions_block').animate({ scrollTop: container.offset().top - $('#rm_extensions_block').offset().top + $('#rm_extensions_block').scrollTop() }, 500);
             const drawerHeader = container.find('.inline-drawer-header');
-
-            // 只有当内容被隐藏时才触发展开
-            if (drawerContent.is(':hidden') && drawerHeader.length) {
-                // 直接使用原生点击事件触发，而不做任何内部处理
-                drawerHeader.trigger('click');
-            }
+            if (container.find('.inline-drawer-content').is(':hidden') && drawerHeader.length) drawerHeader.trigger('click');
         }
     }, 500);
 }
 
-// 初始化扩展
 $(function () {
     (async function () {
-        // 获取设置HTML (只获取一次)
-        const settingsHtml = await $.get(
-            `${extensionFolderPath}/settings.html`,
-        );
-
-        // 添加扩展到菜单
-        $('#extensionsMenu')
-            .append(`<div id="auto_generation" class="list-group-item flex-container flexGap5">
-            <div class="fa-solid fa-robot"></div>
-            <span data-i18n="Image Auto Generation">Image Auto Generation</span>
+        const settingsHtml = await $.get(`${extensionFolderPath}/settings.html`);
+        $('#extensionsMenu').append(`<div id="auto_generation" class="list-group-item flex-container flexGap5">
+            <div class="fa-solid fa-robot"></div><span data-i18n="Image Auto Generation">Image Auto Generation</span>
         </div>`);
-
-        // 修改点击事件，打开设置面板而不是切换状态
         $('#auto_generation').off('click').on('click', onExtensionButtonClick);
-
         await loadSettings();
-
-        // 创建设置 - 将获取的HTML传递给createSettings
         await createSettings(settingsHtml);
-
-        // 确保设置面板可见时，设置值是正确的
-        $('#extensions-settings-button').on('click', function () {
-            setTimeout(() => {
-                updateUI();
-            }, 200);
-        });
+        $('#extensions-settings-button').on('click', () => setTimeout(updateUI, 200));
     })();
 });
-// 获取消息角色
-function getMesRole() {
-    // 确保对象路径存在
-    if (
-        !extension_settings[extensionName] ||
-        !extension_settings[extensionName].promptInjection ||
-        !extension_settings[extensionName].promptInjection.position
-    ) {
-        return 'system'; // 默认返回system角色
-    }
 
-    switch (extension_settings[extensionName].promptInjection.position) {
-        case 'deep_system':
-            return 'system';
-        case 'deep_user':
-            return 'user';
-        case 'deep_assistant':
-            return 'assistant';
-        default:
-            return 'system';
-    }
+function getMesRole() {
+    if (!extension_settings[extensionName]?.promptInjection?.position) return 'system';
+    const pos = extension_settings[extensionName].promptInjection.position;
+    return pos === 'deep_user' ? 'user' : pos === 'deep_assistant' ? 'assistant' : 'system';
 }
 
-// 监听CHAT_COMPLETION_PROMPT_READY事件以注入提示词
-eventSource.on(
-    event_types.CHAT_COMPLETION_PROMPT_READY,
-    async function (eventData) {
-        try {
-            // 确保设置对象和promptInjection对象都存在
-            if (
-                !extension_settings[extensionName] ||
-                !extension_settings[extensionName].promptInjection ||
-                !extension_settings[extensionName].promptInjection.enabled ||
-                extension_settings[extensionName].insertType ===
-                    INSERT_TYPE.DISABLED
-            ) {
-                return;
-            }
+// 注入提示词逻辑
+eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, async function (eventData) {
+    try {
+        if (!extension_settings[extensionName]?.promptInjection?.enabled || extension_settings[extensionName].insertType === INSERT_TYPE.DISABLED) return;
 
-            const prompt =
-                extension_settings[extensionName].promptInjection.prompt;
-            const depth =
-                extension_settings[extensionName].promptInjection.depth || 0;
-            const role = getMesRole();
+        const currentData = getCurrentTemplateData();
+        const prompt = currentData.prompt;
+        const depth = extension_settings[extensionName].promptInjection.depth || 0;
+        const role = getMesRole();
 
-            console.log(
-                `[${extensionName}] 准备注入提示词: 角色=${role}, 深度=${depth}`,
-            );
-            console.log(
-                `[${extensionName}] 提示词内容: ${prompt.substring(0, 50)}...`,
-            );
-
-            // 根据depth参数决定插入位置
-            if (depth === 0) {
-                // 添加到末尾
-                eventData.chat.push({ role: role, content: prompt });
-                console.log(`[${extensionName}] 提示词已添加到聊天末尾`);
-            } else {
-                // 从末尾向前插入
-                eventData.chat.splice(-depth, 0, {
-                    role: role,
-                    content: prompt,
-                });
-                console.log(
-                    `[${extensionName}] 提示词已插入到聊天中，从末尾往前第 ${depth} 个位置`,
-                );
-            }
-        } catch (error) {
-            console.error(`[${extensionName}] 提示词注入错误:`, error);
-            toastr.error(`提示词注入错误: ${error}`);
-        }
-    },
-);
-
-// 监听消息接收事件
-eventSource.on(event_types.MESSAGE_RECEIVED, handleIncomingMessage);
-async function handleIncomingMessage() {
-    // 确保设置对象存在
-    if (
-        !extension_settings[extensionName] ||
-        extension_settings[extensionName].insertType === INSERT_TYPE.DISABLED
-    ) {
-        return;
+        if (depth === 0) eventData.chat.push({ role: role, content: prompt });
+        else eventData.chat.splice(-depth, 0, { role: role, content: prompt });
+    } catch (error) {
+        console.error(`[${extensionName}] 提示词注入错误:`, error);
     }
+});
+
+// 处理收到的消息
+eventSource.on(event_types.MESSAGE_RECEIVED, async function() {
+    if (!extension_settings[extensionName] || extension_settings[extensionName].insertType === INSERT_TYPE.DISABLED) return;
 
     const context = getContext();
     const message = context.chat[context.chat.length - 1];
+    if (!message || message.is_user) return;
 
-    // 检查是否是AI消息
-    if (!message || message.is_user) {
-        return;
-    }
-
-    // 确保promptInjection对象和regex属性存在
-    if (
-        !extension_settings[extensionName].promptInjection ||
-        !extension_settings[extensionName].promptInjection.regex
-    ) {
-        console.error('Prompt injection settings not properly initialized');
-        return;
-    }
-
-    // 使用正则表达式search
-    const imgTagRegex = regexFromString(
-        extension_settings[extensionName].promptInjection.regex,
-    );
-    // const testRegex = regexFromString(extension_settings[extensionName].promptInjection.regex);
+    const currentData = getCurrentTemplateData();
+    const imgTagRegex = regexFromString(currentData.regex);
     let matches;
     if (imgTagRegex.global) {
         matches = [...message.mes.matchAll(imgTagRegex)];
@@ -369,122 +224,51 @@ async function handleIncomingMessage() {
         const singleMatch = message.mes.match(imgTagRegex);
         matches = singleMatch ? [singleMatch] : [];
     }
-    console.log(imgTagRegex, matches);
+
     if (matches.length > 0) {
-        // 延迟执行图片生成，确保消息首先显示出来
         setTimeout(async () => {
             try {
                 toastr.info(`Generating ${matches.length} images...`);
                 const insertType = extension_settings[extensionName].insertType;
-
-                // 在当前消息中插入图片
-                // 初始化message.extra
-                if (!message.extra) {
-                    message.extra = {};
-                }
-
-                // 初始化image_swipes数组
-                if (!Array.isArray(message.extra.image_swipes)) {
-                    message.extra.image_swipes = [];
-                }
-
-                // 如果已有图片，添加到swipes
-                if (
-                    message.extra.image &&
-                    !message.extra.image_swipes.includes(message.extra.image)
-                ) {
+                if (!message.extra) message.extra = {};
+                if (!Array.isArray(message.extra.image_swipes)) message.extra.image_swipes = [];
+                if (message.extra.image && !message.extra.image_swipes.includes(message.extra.image)) {
                     message.extra.image_swipes.push(message.extra.image);
                 }
 
-                // 获取消息元素用于稍后更新
-                const messageElement = $(
-                    `.mes[mesid="${context.chat.length - 1}"]`,
-                );
+                const messageElement = $(`.mes[mesid="${context.chat.length - 1}"]`);
 
-                // 处理每个匹配的图片标签
                 for (const match of matches) {
-                    const prompt =
-                        typeof match?.[1] === 'string' ? match[1] : '';
-                    if (!prompt.trim()) {
-                        continue;
-                    }
+                    const prompt = typeof match?.[1] === 'string' ? match[1] : '';
+                    if (!prompt.trim()) continue;
 
                     // @ts-ignore
-                    const result = await SlashCommandParser.commands[
-                        'sd'
-                    ].callback(
-                        {
-                            quiet:
-                                insertType === INSERT_TYPE.NEW_MESSAGE
-                                    ? 'false'
-                                    : 'true',
-                        },
-                        prompt,
+                    const result = await SlashCommandParser.commands['sd'].callback(
+                        { quiet: insertType === INSERT_TYPE.NEW_MESSAGE ? 'false' : 'true' }, prompt
                     );
-                    // 统一插入到extra里
-                    if (insertType === INSERT_TYPE.INLINE) {
-                        let imageUrl = result;
-                        if (
-                            typeof imageUrl === 'string' &&
-                            imageUrl.trim().length > 0
-                        ) {
-                            // 添加图片到swipes数组
-                            message.extra.image_swipes.push(imageUrl);
-
-                            // 设置第一张图片为主图片，或更新为最新生成的图片
-                            message.extra.image = imageUrl;
-                            message.extra.title = prompt;
-                            message.extra.inline_image = true;
-
-                            // 更新UI
-                            appendMediaToMessage(message, messageElement);
-
-                            // 保存聊天记录
-                            await context.saveChat();
-                        }
-                    } else if (insertType === INSERT_TYPE.REPLACE) {
-                        let imageUrl = result;
-                        if (
-                            typeof imageUrl === 'string' &&
-                            imageUrl.trim().length > 0
-                        ) {
-                            // Find the original image tag in the message
-                            const originalTag =
-                                typeof match?.[0] === 'string' ? match[0] : '';
-                            if (!originalTag) {
-                                continue;
-                            }
-                            // Replace it with an actual image tag
-                            const escapedUrl = escapeHtmlAttribute(imageUrl);
-                            const escapedPrompt = escapeHtmlAttribute(prompt);
-                            const newImageTag = `<img src="${escapedUrl}" title="${escapedPrompt}" alt="${escapedPrompt}">`;
-                            message.mes = message.mes.replace(
-                                originalTag,
-                                newImageTag,
-                            );
-
-                            // Update the message display using updateMessageBlock
-                            updateMessageBlock(
-                                context.chat.length - 1,
-                                message,
-                            );
-                            await eventSource.emit(
-                                event_types.MESSAGE_UPDATED,
-                                context.chat.length - 1,
-                            );
-
-                            // Save the chat
+                    
+                    if (insertType === INSERT_TYPE.INLINE && typeof result === 'string' && result.trim().length > 0) {
+                        message.extra.image_swipes.push(result);
+                        message.extra.image = result;
+                        message.extra.title = prompt;
+                        message.extra.inline_image = true;
+                        appendMediaToMessage(message, messageElement);
+                        await context.saveChat();
+                    } else if (insertType === INSERT_TYPE.REPLACE && typeof result === 'string' && result.trim().length > 0) {
+                        const originalTag = typeof match?.[0] === 'string' ? match[0] : '';
+                        if (originalTag) {
+                            const newImageTag = `<img src="${escapeHtmlAttribute(result)}" title="${escapeHtmlAttribute(prompt)}" alt="${escapeHtmlAttribute(prompt)}">`;
+                            message.mes = message.mes.replace(originalTag, newImageTag);
+                            updateMessageBlock(context.chat.length - 1, message);
+                            await eventSource.emit(event_types.MESSAGE_UPDATED, context.chat.length - 1);
                             await context.saveChat();
                         }
                     }
                 }
-                toastr.success(
-                    `${matches.length} images generated successfully`,
-                );
+                toastr.success(`${matches.length} images generated successfully`);
             } catch (error) {
                 toastr.error(`Image generation error: ${error}`);
-                console.error('Image generation error:', error);
             }
-        }, 0); //防阻塞UI渲染
+        }, 0);
     }
-}
+});
