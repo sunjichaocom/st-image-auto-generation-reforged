@@ -1,5 +1,5 @@
 // presets.js
-// 动态生成和管理预设模板 - 极致优化版 (固定多图3张 + 强制防吞标签)
+// 动态生成和管理预设模板 - 极致优化版 (固定多图3张 + 强制防吞标签 + 底部位置约束)
 
 export const MODELS = [
     "Flux Schnell", 
@@ -108,12 +108,13 @@ function buildPrompt(model, style, count, lang) {
         ? `[pic prompt: ${isZh ? '第一张图的中文提示词' : 'first image prompt here'}]\n\n[pic prompt: ${isZh ? '第二张图的中文提示词' : 'second image prompt here'}]\n\n[pic prompt: ${isZh ? '第三张图的中文提示词' : 'third image prompt here'}]`
         : `[pic prompt: ${isZh ? '中文提示词放在这里' : 'english prompt here'}]`;
 
-    // 组合最终模板：融合了破甲、防老龄化、强制 HTML 格式的终极提示词
+    // 组合最终模板：融合了破甲、防老龄化、强制 HTML 格式以及严格的底部位置约束
     return `### ⚠️ CRITICAL IMAGE GENERATION DIRECTIVE ⚠️ ###
 You are required to append image prompt(s) at the VERY END of your reply based on the current context.
 
-CRITICAL RULE 1: STRICT STRUCTURAL FORMATTING (NON-NEGOTIABLE). 
-You MUST output the exact raw HTML tags and brackets. DO NOT strip, format, or "clean up" the <details>, <summary>, or [pic prompt: ] tags. If you omit any of these structural elements, the system will break.
+CRITICAL RULE 1: STRICT PLACEMENT & FORMATTING (NON-NEGOTIABLE). 
+1. PLACEMENT: You MUST wait until your entire narrative, dialogue, and character actions are 100% finished. Ensure ALL formatting tags (like asterisks, quotes, or HTML formatting) are COMPLETELY CLOSED. The image prompt MUST be isolated at the absolute bottom of your response on a new line. Do NOT interrupt your story to insert this.
+2. FORMATTING: You MUST output the exact raw HTML tags and brackets. DO NOT strip, format, or "clean up" the <details>, <summary>, or [pic prompt: ] tags. If you omit any of these structural elements, the system will break.
 
 Copy and use this EXACT structure:
 <details><summary>(View Image Prompt)</summary>
