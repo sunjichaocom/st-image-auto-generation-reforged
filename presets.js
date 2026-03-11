@@ -1,5 +1,5 @@
 // presets.js
-// 动态生成和管理预设模板 - 极致优化版 (固定多图3张 + 强制防吞标签 + 底部位置约束)
+// 动态生成和管理预设模板 - 极致优化版 (包含抽卡模式隔离 + 强制防吞标签 + 底部位置约束)
 
 export const MODELS = [
     "Flux Schnell", 
@@ -23,7 +23,8 @@ export const STYLES = [
 
 export const COUNTS = [
     { id: "single", name: "单图 (Single)" }, 
-    { id: "multi", name: "多图 (固定 3 张)" }
+    { id: "multi", name: "多图 (固定 3 张)" },
+    { id: "gacha", name: "抽卡模式 (每人一张独立立绘)" }
 ];
 
 export const LANGS = [
@@ -36,13 +37,24 @@ export const UNIVERSAL_REGEX = '/\\[pic\\s*prompt:\\s*([\\s\\S]*?)\\]/gi';
 
 // 核心逻辑：根据四个维度动态构建 Prompt
 function buildPrompt(model, style, count, lang) {
-    const isMulti = count.id === "multi";
     const isZh = lang.id === "zh";
 
-    // 1. 数量约束 (强制锁定3张)
-    const countRule = isMulti 
-        ? "CRITICAL RULE: You MUST generate EXACTLY THREE separate image prompts to represent different moments, angles, or character focuses of the current scene. Separate each scene clearly."
-        : "CRITICAL RULE: You MUST generate EXACTLY ONE image prompt capturing the climax of the current scene.";
+    // 1. 数量约束与示例动态生成 (新增抽卡隔离逻辑)
+    let countRule = "";
+    let exampleFormat = "";
+
+    if (count.id === "multi") {
+        countRule = "CRITICAL RULE: You MUST generate EXACTLY THREE separate image prompts to represent different moments, angles, or character focuses of the current scene. Separate each scene clearly.";
+        exampleFormat = `[pic prompt: ${isZh ? '第一张图的中文提示词' : 'first image prompt here'}]\n\n[pic prompt: ${isZh ? '第二张图的中文提示词' : 'second image prompt here'}]\n\n[pic prompt: ${isZh ? '第三张图的中文提示词' : 'third image prompt here'}]`;
+    } 
+    else if (count.id === "gacha") {
+        countRule = "CRITICAL RULE: GACHA MULTIPLE CHARACTER ISOLATION. You MUST generate a separate image prompt for EACH distinct character pulled or introduced in your response. If you pull 3 characters, generate 3 separate [pic prompt: ...] blocks. In each prompt, ONLY describe ONE character. DO NOT mix features, clothing, or backgrounds between characters. Isolate them completely as individual solo portraits.";
+        exampleFormat = `[pic prompt: ${isZh ? '角色A的独立立绘提示词' : 'Character A isolated portrait prompt'}]\n\n[pic prompt: ${isZh ? '角色B的独立立绘提示词' : 'Character B isolated portrait prompt'}]`;
+    } 
+    else {
+        countRule = "CRITICAL RULE: You MUST generate EXACTLY ONE image prompt capturing the climax of the current scene.";
+        exampleFormat = `[pic prompt: ${isZh ? '中文提示词放在这里' : 'english prompt here'}]`;
+    }
 
     // 2. 语言约束
     const langRule = isZh 
@@ -102,11 +114,6 @@ function buildPrompt(model, style, count, lang) {
             styleRule = "STYLE: High-quality masterpiece, dynamic cinematic lighting, highly detailed background, vivid colors."; 
             break;
     }
-
-    // 动态生成示例格式 (多图固定3张)
-    const exampleFormat = isMulti 
-        ? `[pic prompt: ${isZh ? '第一张图的中文提示词' : 'first image prompt here'}]\n\n[pic prompt: ${isZh ? '第二张图的中文提示词' : 'second image prompt here'}]\n\n[pic prompt: ${isZh ? '第三张图的中文提示词' : 'third image prompt here'}]`
-        : `[pic prompt: ${isZh ? '中文提示词放在这里' : 'english prompt here'}]`;
 
     // 组合最终模板：融合了破甲、防老龄化、强制 HTML 格式以及严格的底部位置约束
     return `### ⚠️ CRITICAL IMAGE GENERATION DIRECTIVE ⚠️ ###
