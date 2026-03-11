@@ -96,7 +96,18 @@ async function loadSettings() {
 
 async function createSettings(settingsHtml) {
     if (!$('#image_auto_generation_container').length) {
-        $('#extensions_settings2').append('<div id="image_auto_generation_container" class="extension_container"></div>');
+        const containerHtml = '<div id="image_auto_generation_container" class="extension_container"></div>';
+        
+        // 【已修复】：精准定位原生的图像生成面板 (sd_container)
+        const targetContainer = $('#sd_container'); 
+        
+        if (targetContainer.length) {
+            // 如果找到了原生图像生成，就插在它后面
+            $(containerHtml).insertAfter(targetContainer);
+        } else {
+            // 备用方案
+            $('#extensions_settings2').append(containerHtml);
+        }
     }
     $('#image_auto_generation_container').empty().append(settingsHtml);
 
@@ -171,16 +182,66 @@ function onExtensionButtonClick() {
     }, 500);
 }
 
+// ================= 新增：智能蹲点插队逻辑 =================
+function repositionPlugin() {
+    let attempts = 0;
+    const timer = setInterval(() => {
+        // 精准寻找原生“图像生成”的菜单项和设置面板
+        const nativeMenu = $('#extensionsMenu').find('[data-i18n="Image Generation"]').closest('.list-group-item');
+        
+        // 【已修复】：这里的目标改为 #sd_container
+        const nativePanel = $('#sd_container');
+        
+        const myMenu = $('#auto_generation');
+        const myPanel = $('#image_auto_generation_container');
+
+        let movedMenu = false;
+        let movedPanel = false;
+
+        // 如果原生的菜单加载出来了，执行插队
+        if (nativeMenu.length && myMenu.length) {
+            myMenu.insertAfter(nativeMenu.last());
+            movedMenu = true;
+        }
+        
+        // 如果原生的面板加载出来了，执行插队
+        if (nativePanel.length && myPanel.length) {
+            myPanel.insertAfter(nativePanel);
+            movedPanel = true;
+        }
+
+        // 如果两个都插队成功了，或者尝试超过了20次，就停止蹲点
+        if ((movedMenu && movedPanel) || ++attempts > 20) {
+            clearInterval(timer);
+        }
+    }, 500);
+}
+// ==========================================================
+
 $(function () {
     (async function () {
         const settingsHtml = await $.get(`${extensionFolderPath}/settings.html`);
-        $('#extensionsMenu').append(`<div id="auto_generation" class="list-group-item flex-container flexGap5">
+        
+        const menuItemHtml = `<div id="auto_generation" class="list-group-item flex-container flexGap5">
             <div class="fa-solid fa-robot"></div><span data-i18n="Image Auto Generation">Image Auto Generation</span>
-        </div>`);
+        </div>`;
+
+        // 初始寻找（有可能运气好刚好同步加载出来了）
+        const targetMenu = $('#extensionsMenu').find('[data-i18n="Image Generation"], #imagen_menu').closest('.list-group-item');
+        
+        if (targetMenu.length) {
+            $(menuItemHtml).insertAfter(targetMenu.last());
+        } else {
+            $('#extensionsMenu').append(menuItemHtml);
+        }
+
         $('#auto_generation').off('click').on('click', onExtensionButtonClick);
         await loadSettings();
         await createSettings(settingsHtml);
         $('#extensions-settings-button').on('click', () => setTimeout(updateUI, 200));
+
+        // 核心：启动智能插队，防止异步加载导致的乱序
+        repositionPlugin();
     })();
 });
 
