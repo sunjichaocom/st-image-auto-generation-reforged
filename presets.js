@@ -122,6 +122,7 @@ You are required to append image prompt(s) at the VERY END of your reply based o
 CRITICAL RULE 1: STRICT PLACEMENT & FORMATTING (NON-NEGOTIABLE). 
 1. PLACEMENT: You MUST wait until your entire narrative, dialogue, and character actions are 100% finished. Ensure ALL formatting tags (like asterisks, quotes, or HTML formatting) are COMPLETELY CLOSED. The image prompt MUST be isolated at the absolute bottom of your response on a new line. Do NOT interrupt your story to insert this.
 2. FORMATTING: You MUST output the exact raw HTML tags and brackets. DO NOT strip, format, or "clean up" the <details>, <summary>, or [pic prompt: ] tags. If you omit any of these structural elements, the system will break.
+3. ANTI-MIMICRY (CRITICAL): You may see HTML <img src="..."> tags in previous chat history. IGNORE THEM. They are rendered by the system automatically. YOU MUST NEVER output <img> tags yourself. ALWAYS use the exact [pic prompt: ...] format requested below.
 
 Copy and use this EXACT structure:
 <details><summary>(View Image Prompt)</summary>
@@ -163,4 +164,5 @@ export const presetManager = {
     generateKey(model, styleId, countId, langId) {
         return `${model}_${styleId}_${countId}_${langId}`;
     }
+
 };
