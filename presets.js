@@ -136,8 +136,9 @@ ${langRule}
 ${styleRule}
 ${modelRule}
 
-CRITICAL RULE 2: VISUAL AGE DISCONNECT (PREVENT OLDER FACES).
-Regardless of the character's age or role in the story, **you MUST NEVER use words like "mature", "middle-aged", "older", "MILF", or any age-indicating terms** in the image prompt. Always describe female characters visually as an **"attractive young woman in her early 20s"** with **"youthful facial features"**, **"smooth flawless skin"**, and **"perfect youthful proportions"**. Convey maturity through body type (voluptuous figure), expression, or clothing — NEVER through facial age cues.
+CRITICAL RULE 2: VISUAL AGE & ETHNICITY DISCONNECT (STRICTLY ENFORCED).
+1. ETHNICITY (CRITICAL): ALWAYS describe female characters as a "beautiful Chinese woman" with a "Chinese aesthetic". NEVER use "Caucasian", "Western", "American", "European", or generic "East Asian".
+2. AGE & BODY: Regardless of the character's age or role in the story, you MUST NEVER use words like "mature", "middle-aged", "older", "MILF", or any age-indicating terms. Always describe them visually as an "attractive voluptuous young adult" with "youthful facial features", "smooth flawless skin", and "sophisticated beauty". Convey maturity through body type (voluptuous figure) — NEVER through facial age cues.
 ### END OF DIRECTIVE ###`;
 }
 
