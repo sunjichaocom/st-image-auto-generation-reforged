@@ -15,6 +15,57 @@ function escapeHtmlAttribute(value) {
     return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+/**
+ * Reverses {@link escapeHtmlAttribute} to recover the original prompt text.
+ * @param {string} value
+ * @returns {string}
+ */
+function unescapeHtmlAttribute(value) {
+    if (typeof value !== 'string') {
+        return '';
+    }
+
+    return value
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&amp;/g, '&'); // 必须放在最后，避免二次反转义
+}
+
+/**
+ * Converts the <img> tags this extension generated in REPLACE mode back into
+ * their original tag form (as matched by the user-configured regex). Only tags
+ * carrying our data-pic-gen marker are touched, so user/character images are
+ * left untouched.
+ * @param {string} content
+ * @returns {string}
+ */
+function restorePicTags(content) {
+    return content.replace(
+        /<img\b[^>]*?\sdata-pic-gen="([^"]*)"[^>]*>/g,
+        (_match, escapedOriginalTag) =>
+            unescapeHtmlAttribute(escapedOriginalTag),
+    );
+}
+
+/**
+ * Ensures message.extra.image_swipes always exists and is an array.
+ * @param {any} message
+ * @returns {string[]}
+ */
+function ensureImageSwipes(message) {
+    if (!message.extra || typeof message.extra !== 'object') {
+        message.extra = {};
+    }
+
+    if (!Array.isArray(message.extra.image_swipes)) {
+        message.extra.image_swipes = [];
+    }
+
+    return message.extra.image_swipes;
+}
+
 const defaultSettings = {
     insertType: INSERT_TYPE.DISABLED,
     promptInjection: { enabled: true, position: 'deep_system', depth: 0 },
@@ -256,7 +307,43 @@ function getMesRole() {
 // 注入提示词逻辑
 eventSource.on(event_types.CHAT_COMPLETION_PROMPT_READY, async function (eventData) {
     try {
-        if (!extension_settings[extensionName]?.promptInjection?.enabled || extension_settings[extensionName].insertType === INSERT_TYPE.DISABLED) return;
+        // if (!extension_settings[extensionName]?.promptInjection?.enabled || extension_settings[extensionName].insertType === INSERT_TYPE.DISABLED) return;
+ 
+        // 扩展被禁用时不做任何处理
+        if (
+            !extension_settings[extensionName] ||
+            extension_settings[extensionName].insertType ===
+                INSERT_TYPE.DISABLED
+        ) {
+            return;
+        }
+
+
+        // 行内替换模式下，将我们生成的 <img> 标签还原成 <pic prompt="...">，
+        // 这样发送给模型的历史里只会出现 <pic> 标签，避免模型在多轮后学着直接输出 <img>。
+        if (
+            extension_settings[extensionName].insertType ===
+                INSERT_TYPE.REPLACE &&
+            Array.isArray(eventData?.chat)
+        ) {
+            for (const entry of eventData.chat) {
+                if (
+                    entry &&
+                    typeof entry.content === 'string' &&
+                    entry.content.includes('data-pic-gen=')
+                ) {
+                    entry.content = restorePicTags(entry.content);
+                }
+            }
+        }
+
+        // 提示词注入需要单独开启
+        if (
+            !extension_settings[extensionName].promptInjection ||
+            !extension_settings[extensionName].promptInjection.enabled
+        ) {
+            return;
+        }
 
         const currentData = getCurrentTemplateData();
         const prompt = currentData.prompt;
@@ -294,9 +381,20 @@ eventSource.on(event_types.MESSAGE_RECEIVED, async function() {
                 toastr.info(`Generating ${matches.length} images...`);
                 const insertType = extension_settings[extensionName].insertType;
                 if (!message.extra) message.extra = {};
-                if (!Array.isArray(message.extra.image_swipes)) message.extra.image_swipes = [];
-                if (message.extra.image && !message.extra.image_swipes.includes(message.extra.image)) {
-                    message.extra.image_swipes.push(message.extra.image);
+
+                // if (!Array.isArray(message.extra.image_swipes)) message.extra.image_swipes = [];
+                const imageSwipes = ensureImageSwipes(message);
+
+                // if (message.extra.image && !message.extra.image_swipes.includes(message.extra.image)) {
+                //     message.extra.image_swipes.push(message.extra.image);
+                // }
+
+                // 如果已有图片，添加到swipes
+                if (
+                    message.extra.image &&
+                    !imageSwipes.includes(message.extra.image)
+                ) {
+                    imageSwipes.push(message.extra.image);
                 }
 
                 const messageElement = $(`.mes[mesid="${context.chat.length - 1}"]`);
@@ -311,7 +409,11 @@ eventSource.on(event_types.MESSAGE_RECEIVED, async function() {
                     );
                     
                     if (insertType === INSERT_TYPE.INLINE && typeof result === 'string' && result.trim().length > 0) {
-                        message.extra.image_swipes.push(result);
+
+                        // message.extra.image_swipes.push(result);
+                        const currentImageSwipes = ensureImageSwipes(message);
+                        currentImageSwipes.push(result);
+
                         message.extra.image = result;
                         message.extra.title = prompt;
                         message.extra.inline_image = true;
@@ -320,7 +422,13 @@ eventSource.on(event_types.MESSAGE_RECEIVED, async function() {
                     } else if (insertType === INSERT_TYPE.REPLACE && typeof result === 'string' && result.trim().length > 0) {
                         const originalTag = typeof match?.[0] === 'string' ? match[0] : '';
                         if (originalTag) {
-                            const newImageTag = `<img src="${escapeHtmlAttribute(result)}" title="${escapeHtmlAttribute(prompt)}" alt="${escapeHtmlAttribute(prompt)}">`;
+                            // const newImageTag = `<img src="${escapeHtmlAttribute(result)}" title="${escapeHtmlAttribute(prompt)}" alt="${escapeHtmlAttribute(prompt)}">`;
+
+                            const escapedUrl = escapeHtmlAttribute(result);
+                            const escapedPrompt = escapeHtmlAttribute(prompt);
+                            const escapedOriginalTag = escapeHtmlAttribute(originalTag);
+                            const newImageTag = `<img src="${escapedUrl}" title="${escapedPrompt}" alt="${escapedPrompt}" data-pic-gen="${escapedOriginalTag}">`;
+
                             message.mes = message.mes.replace(originalTag, newImageTag);
                             updateMessageBlock(context.chat.length - 1, message);
                             await eventSource.emit(event_types.MESSAGE_UPDATED, context.chat.length - 1);
